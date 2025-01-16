@@ -21,27 +21,31 @@ episode_range_start=""
 episode_range_end=""
 download_dir="."
 requested_quality=""
-version=1.0
+version=1.1
 
 version_info() {
     printf "Версія ${version}\n"
+}
+
+is_clean() {
+    [ "$clean_mode" -eq 0 ] && return 1 || return 0
 }
 
 update() {
     script_path="$0"
     [ ! -w "$script_path" ] && printf "${RED}Немає прав на запис до $script_path${NC}\n" && return 1
 
-    latest_version=$(curl -s "https://raw.githubusercontent.com/Gridi-1143/ani-ukr/main/ani-ukr" | grep -m1 '^VERSION=' | cut -d'"' -f2)
+    latest_version=$(curl -s "https://raw.githubusercontent.com/Gridi-1143/ani-ukr/main/ani-ukr" | grep -m1 'version=' | cut -d'=' -f2)
     [ -z "$latest_version" ] && printf "${RED}Помилка отримання версії${NC}\n" && return 1
 
-    if [ "$VERSION" = "$latest_version" ]; then
-        is_clean || printf "${GREEN}Встановлено останню версію${NC}\n"
+    if [ "$version" = "$latest_version" ]; then
+        is_clean || printf "${BOLD}${BLUE}Встановлено останню версію${NC}\n"
         return 0
     fi
 
     curl -s "https://raw.githubusercontent.com/Gridi-1143/ani-ukr/main/ani-ukr" > "$script_path" && \
     chmod +x "$script_path" && \
-    is_clean || printf "${GREEN}Оновлено до версії $latest_version${NC}\n"
+    is_clean || printf "${BOLD}${BLUE}Оновлено до версії $latest_version${NC}\n"
 }
 
 help_info() {
@@ -191,28 +195,6 @@ set_internal_player() {
     exit 1
 }
 
-is_clean() {
-    [ "$clean_mode" -eq 0 ] && return 1 || return 0
-}
-
-open_in_browser() {
-    case "$(uname -s)" in
-        Linux*)
-            if command -v xdg-open >/dev/null 2>&1; then
-                xdg-open "$1"
-            elif command -v gio >/dev/null 2>&1; then
-                gio open "$1"
-            else
-                printf "${RED}Не знайдено xdg-open або gio${NC}\n" >&2
-                return 1
-            fi
-            ;;
-        Darwin*)  open "$1" ;;
-        MINGW*|MSYS*|CYGWIN*) start "$1" ;;
-        *) printf "${RED}Непідтримувана ОС\n" >&2; return 1 ;;
-    esac
-}
-
 extract_episode_url() {
     player_url="$1"
     requested_quality="$2"
@@ -247,6 +229,7 @@ extract_episode_url() {
                 episode_url=$(printf '%s' "$video_data" | sed -n "s/.*\[$quality\]\([^,]*\).*/\1/p")
                 if [ -z "$episode_url" ]; then
                     printf "${RED}Якість $quality не знайдена${NC}\n" >&2
+                    sleep 2
                     return 1
                 fi
             else
@@ -256,12 +239,12 @@ extract_episode_url() {
         *mp4upload.com*)
             if [ -n "$requested_quality" ]; then
                 printf "${RED}Якість для цього плеєру обрати не можна${NC}\n" >&2
-                sleep 1
+                sleep 2
                 return 1
             fi
             [ "$internal_player" = "vlc" ] && {
                 printf "${RED}VLC не може відтворювати плеєр MP4\n${NC}" >&2
-                sleep 1
+                sleep 2
                 return 1
             }
             mp4_id=$(printf '%s' "$html_content" | sed -n 's/.*embed-\([^"]*\)\.html.*/\1/p')
@@ -275,7 +258,7 @@ extract_episode_url() {
         *) 
             if [ -n "$requested_quality" ]; then
                 printf "${RED}Якість для цього плеєру обрати не можна${NC}\n" >&2
-                sleep 1
+                sleep 2
                 return 1
             fi
             episode_url="$video_data"
@@ -664,9 +647,26 @@ play_episode() {
     esac
 }
 
+open_in_browser() {
+    case "$(uname -s)" in
+        Linux*)
+            if command -v xdg-open >/dev/null 2>&1; then
+                xdg-open "$1"
+            elif command -v gio >/dev/null 2>&1; then
+                gio open "$1"
+            else
+                printf "${RED}Не знайдено xdg-open або gio${NC}\n" >&2
+                return 1
+            fi
+            ;;
+        Darwin*)  open "$1" ;;
+        MINGW*|MSYS*|CYGWIN*) start "$1" ;;
+        *) printf "${RED}Непідтримувана ОС\n" >&2; return 1 ;;
+    esac
+}
+
 show_menu() {
     [ ! -f "$temp_episodes" ] && return 1
-    is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити дії${NC}\n"
     
     while true; do
         choice=$(printf "Наступна серія\nПовторити серію\nПопередня серія\nОбрати серію\nОбрати якість\nВийти" | \
@@ -686,7 +686,8 @@ show_menu() {
                     is_clean || printf "${BOLD}${BLUE}URL плеєру${NC} ($next_title): ${CYAN}$next_url${NC}\n"
                     if next_episode_url=$(extract_episode_url "$next_url" "$quality"); then
                         is_clean || printf "${BOLD}${BLUE}URL серії${NC} ($next_title): ${CYAN}$next_episode_url${NC}\n"
-                        [ "$force_flag" -e 0 ] && wait
+                        [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                        [ "$force_flag" -eq 0 ] && wait
                         episode_title=$next_title
                         player_url=$next_url
                         episode_url=$next_episode_url
@@ -703,7 +704,8 @@ show_menu() {
                 is_clean || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
                 if episode_url=$(extract_episode_url "$player_url" "$quality"); then
                     is_clean || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$episode_url${NC}\n"
-                    [ "$force_flag" -e 0 ] && wait
+                    [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                    [ "$force_flag" -eq 0 ] && wait
                     play_episode &
                     show_menu && return 0
                 fi
@@ -720,7 +722,8 @@ show_menu() {
                     is_clean || printf "${BOLD}${BLUE}URL плеєру${NC} ($prev_title): ${CYAN}$prev_url${NC}\n"
                     if prev_episode_url=$(extract_episode_url "$prev_url" "$quality"); then
                         is_clean || printf "${BOLD}${BLUE}URL серії${NC} ($prev_title): ${CYAN}$prev_episode_url${NC}\n"
-                        [ "$force_flag" -e 0 ] && wait
+                        [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                        [ "$force_flag" -eq 0 ] && wait
                         episode_title=$prev_title
                         player_url=$prev_url
                         episode_url=$prev_episode_url
@@ -745,7 +748,8 @@ show_menu() {
                     is_clean || printf "${BOLD}${BLUE}URL плеєру${NC} ($selected_title): ${CYAN}$selected_url${NC}\n"
                     if selected_episode_url=$(extract_episode_url "$selected_url" "$quality"); then
                         is_clean || printf "${BOLD}${BLUE}URL серії${NC} ($selected_title): ${CYAN}$selected_episode_url${NC}\n"
-                        [ "$force_flag" -e 0 ] && wait
+                        [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                        [ "$force_flag" -eq 0 ] && wait
                         episode_title=$selected_title
                         player_url=$selected_url
                         episode_url=$selected_episode_url
@@ -764,14 +768,16 @@ show_menu() {
                         continue 
                     fi
                     is_clean || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$new_episode_url${NC}\n"
-                    [ "$force_flag" -e 0 ] && wait
+                    [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                    [ "$force_flag" -eq 0 ] && wait
                     episode_url=$new_episode_url
                     play_episode &
                     show_menu && return 0
                 fi
                 ;;
             "Вийти")
-                [ "$force_flag" -e 0 ] && wait
+                [ "$force_flag" -eq 0 ] && is_clean || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
+                [ "$force_flag" -eq 0 ] && wait
                 rm -f "$temp_episodes"
                 return 0
                 ;;
@@ -861,4 +867,3 @@ case "$internal_player" in
         fi
         ;;
 esac
-
