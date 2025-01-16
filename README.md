@@ -9,7 +9,7 @@ ani-ukr це програма для перегляду аніме з сайту
 - jq
 - fzf
 - mpv (плеєр)
-- iina (плеєр для macOS)
+- iina (плеєр для MacOS)
 - yt-dlp (опціонально, для завантаження відео)
 - ffmpeg (опціонально, для завантаження відео)
 - aria2c (опціонально, для завантаження відео)
@@ -44,12 +44,12 @@ sudo cp ani-ukr/ani-ukr ~/.local/bin
 rm -rf ani-ukr
 ```
 ## MacOS 
-Я не маю змоги тестувати на MacOS але по ідеї код має працювати так само, як і на Linux, тому можете спробувати
+Я не маю змоги тестувати на MacOS, але по ідеї код має працювати так само, як і на Linux, тому можете спробувати
 <details><summary>Встановлення</summary>
 
-Скачайте [HomeBrew](https://docs.brew.sh/Installation)
+Завантажте [HomeBrew](https://docs.brew.sh/Installation)
 
-*Встановити залженості можете так*
+*Встановити залеженості можете так*
 
 ```sh
 brew install curl jq grep aria2 ffmpeg git fzf yt-dlp && \
