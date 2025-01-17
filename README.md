@@ -58,9 +58,9 @@ brew install --cask iina
 І тоді
 
 ```sh
-git clone "https://github.com/pystardust/ani-cli.git" && cd ./ani-cli
-cp ./ani-cli "$(brew --prefix)"/bin
-cd .. && rm -rf ./ani-cli
+git clone "https://github.com/Gridi-1143/ani-ukr.git" && cd ./ani-ukr
+cp ./ani-ukr "$(brew --prefix)"/bin
+cd .. && rm -rf ./ani-ukr
 ```
 </details>
 
