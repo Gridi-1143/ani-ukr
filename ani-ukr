@@ -21,7 +21,7 @@ episode_range_start=""
 episode_range_end=""
 download_dir="."
 requested_quality=""
-version=1.1
+version=1.2
 
 version_info() {
     printf "Версія ${version}\n"
@@ -223,7 +223,7 @@ extract_episode_url() {
     quality=${requested_quality:-$default_quality}
 
     case "$video_data" in
-        # Формат з якостями [720p]url,[1080p]url
+        # Формат з якостями [720p]url,[1080p]url, треба допрацювати
         *'['*']'*)
             if [ -n "$requested_quality" ]; then
                 episode_url=$(printf '%s' "$video_data" | sed -n "s/.*\[$quality\]\([^,]*\).*/\1/p")
@@ -325,41 +325,6 @@ extract_user_hash() {
   echo "$html" | grep -oP 'var dle_login_hash = '\''\K[^'\'']+'
 }
 
-# Зібрати гурти 
-fetch_playlist() {
-  url="$1"
-  news_id=$(extract_news_id "$url")
-  user_hash=$(extract_user_hash "$url")
-
-  if [ -z "$news_id" ] || [ -z "$user_hash" ]; then
-    printf "${RED}Не вдалося отримати необхідні дані з посилання${NC}: $url"
-    exit 1
-  fi
-
-  response=$(curl -s -X GET "$api_url?news_id=$news_id&xfield=playlist&user_hash=$user_hash" \
-    -H "Referer: $url" \
-    -H "X-Requested-With: XMLHttpRequest" \
-    -H "Accept: application/json, text/javascript, */*; q=0.01")
-
-  if printf '%s' "$response" | grep -q '"success":false'; then
-    response=$(curl -s \
-      -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" \
-      -H "Referer: https://anitube.in.ua/" \
-      -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
-      "$url" )    
-    player_url=$(printf '%s' "$response" | grep -o '<iframe src="[^"]*"' | sed 's/<iframe src="\([^"]*\)".*/\1/')
-    title=$(printf '%s' "$response" | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')
-    [ -z "$player_url" ] && {
-      printf "${RED}Не вдалося знайти плеєр, можете подати помилку про це аніме на github${NC}\n" >&2 
-      return 1
-    } 
-    printf '%s\n' "$player_url" "$title"
-    return 0
-  fi
-
-  printf '%s\n' "$response"
-}
-
 anitube_search() {
   query=$(printf "%s" "$1" | sed 's| |+|g')
   search_start=1
@@ -369,7 +334,7 @@ anitube_search() {
 
   initial_result=$(curl -s "$anitube_base/index.php?do=search" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -H "User-Agent: Mozilla/5.0" \
+    -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0" \
     --data-raw "do=search&subaction=search&search_start=$search_start&full_search=0&result_from=$result_from&story=$query")
 
   total_results=$(printf "%s" "$initial_result" | grep -oP '(?<=За Вашим запитом знайдено )\d+')
@@ -378,7 +343,7 @@ anitube_search() {
   while [ $search_start -le $total_pages ]; do
     initial_result=$(curl -s "$anitube_base/index.php?do=search" \
       -H "Content-Type: application/x-www-form-urlencoded" \
-      -H "User-Agent: Mozilla/5.0" \
+      -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0" \
       --data-raw "do=search&subaction=search&search_start=$search_start&full_search=0&result_from=$result_from&story=$query")
 
     links=$(printf "%s" "$initial_result" | sed -n 's|.*<h2[^>]*><a href="\([^"]*\)">.*|\1|p')
@@ -426,111 +391,166 @@ anitube_search() {
   fi
 }
 
-# Всі серії гурту
+# Зібрати інфу про плєер 
+fetch_playlist() {
+  url="$1"
+  news_id=$(extract_news_id "$url")
+  user_hash=$(extract_user_hash "$url")
+
+  response=$(curl -s -X GET "$api_url?news_id=$news_id&xfield=playlist&user_hash=$user_hash" \
+    -H "Referer: $url" \
+    -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0" \
+    -H "X-Requested-With: XMLHttpRequest" \
+    -H "Accept: application/json, text/javascript, */*; q=0.01")
+
+  if printf '%s' "$response" | grep -q '"success":false'; then
+    page_html=$(curl -s -L --post302 \
+      -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0" \
+      -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+      "$url")
+
+    response=$(printf '%s' "$page_html" | grep -o 'RalodePlayer\.init([^)]*)')
+    
+    [ -z "$response" ] && {
+      printf "${RED}Не вдалося знайти список серій${NC}\n" >&2 
+      return 1
+    }
+
+    printf "html\n%s\n" "$response"
+    return 0
+  fi
+
+  printf "json\n%s\n" "$response"
+}
+
+
+# Отримати серії
 process_playlist() {
-    json="$1"
-    title="$2"
+    read -r type
+    data=$(cat)
 
-    decoded_json=$(cat "$json" | jq -r .)
-    response=$(printf '%s' "$decoded_json" | jq -r .response | tr -d '\n\r')
+    case "$type" in
+        json)
+            decoded_data=$(printf '%s' "$data" | jq -r .)
+            response=$(printf '%s' "$decoded_data" | jq -r .response | tr -d '\n\r')
 
-    temp_voice=$(mktemp)
-    temp_sub=$(mktemp)
-    temp_final=$(mktemp)
+            temp_voice=$(mktemp)
+            temp_sub=$(mktemp)
+            temp_final=$(mktemp)
 
-    printf '%s' "$response" | grep -oP '(?<=<li data-id="0_)[0-9]+">[^<]+' | while read -r type_line; do
-        type_id=${type_line%%\">*}
-        type_name=${type_line#*\">}
+            printf '%s' "$response" | grep -oP '(?<=<li data-id="0_)[0-9]+">[^<]+' | while read -r type_line; do
+                type_id=${type_line%%\">*}
+                type_name=${type_line#*\">}
 
-        output_file="$temp_voice"
-        [ "$type_name" = "СУБТИТРИ" ] && output_file="$temp_sub"
+                output_file="$temp_voice"
+                [ "$type_name" = "СУБТИТРИ" ] && output_file="$temp_sub"
 
-        if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]_[0-9]\">"; then
-            printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_)[0-9]\">[^<]+" | while read -r group_line; do
-                group_id=${group_line%%\">*}
-                group_name=${group_line#*\">}
+                if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]_[0-9]\">"; then
+                    printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_)[0-9]\">[^<]+" | while read -r group_line; do
+                        group_id=${group_line%%\">*}
+                        group_name=${group_line#*\">}
 
-                printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_${group_id}_)[0-9]\">[^<]+" | while read -r player_line; do
-                    player_id=${player_line%%\">*}
-                    player_name=${player_line#*\">}
-                    pattern="0_${type_id}_${group_id}_${player_id}"
+                        printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_${group_id}_)[0-9]\">[^<]+" | while read -r player_line; do
+                            player_id=${player_line%%\">*}
+                            player_name=${player_line#*\">}
+                            pattern="0_${type_id}_${group_id}_${player_id}"
+                            episode_count=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | wc -l)
+
+                            if [ "$episode_count" -gt 0 ]; then
+                                printf "%s:%s:%s\t%s (серій:%d) {%s}\n" \
+                                    "$type_id" "$group_id" "$player_id" \
+                                    "$group_name" "$episode_count" "$player_name" >> "$output_file"
+                            fi
+                        done
+                    done
+                else
+                    pattern="0_${type_id}"
                     episode_count=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | wc -l)
 
                     if [ "$episode_count" -gt 0 ]; then
-                        printf "%s:%s:%s\t%s (серій:%d) {%s}\n" \
-                            "$type_id" "$group_id" "$player_id" \
-                            "$group_name" "$episode_count" "$player_name" >> "$output_file"
+                        printf "%s:%s:%s\t%s (серій:%d)\n" \
+                            "$type_id" "0" "0" \
+                            "$type_name" "$episode_count" >> "$output_file"
                     fi
-                done
+                fi
             done
-        else
-            pattern="0_${type_id}"
-            episode_count=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | wc -l)
 
-            if [ "$episode_count" -gt 0 ]; then
-                printf "%s:%s:%s\t%s (серій:%d)\n" \
-                    "$type_id" "0" "0" \
-                    "$type_name" "$episode_count" >> "$output_file"
+            {
+                printf "=== ОЗВУЧЕННЯ ===\n"
+                if [ -s "$temp_voice" ]; then
+                    cat "$temp_voice"
+                fi
+                printf "=== СУБТИТРИ ===\n"
+                if [ -s "$temp_sub" ]; then
+                    cat "$temp_sub"
+                fi
+            } > "$temp_final"
+
+            selected=$(
+                awk '
+                /^===/ {
+                    printf "%s\t\n", "\t\x1b[1;32m" $0 "\x1b[0m\0"
+                    next
+                }
+                { print }
+                ' "$temp_final" \
+                | fzf --layout=reverse \
+                    --prompt="Виберіть варіант для $title: " \
+                    --with-nth=2.. \
+                    --delimiter='\t' \
+                    --ansi \
+                    --bind="esc:abort" \
+                    --cycle
+            )
+
+            rm -f "$temp_voice" "$temp_sub" "$temp_final"
+
+            if [ -n "$selected" ]; then
+                ids=$(printf '%s' "$selected" | cut -f1)
+                type_id=${ids%%:*}
+                rest=${ids#*:}
+                group_id=${rest%%:*}
+                player_id=${rest#*:}
+        
+                if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_${group_id}_[0-9]\">"; then
+                    pattern="0_${type_id}_${group_id}_${player_id}"
+                elif printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]\">"; then
+                    pattern="0_${type_id}_${player_id}"
+                else
+                    pattern="0_${type_id}"
+                fi
+
+                printf '%s\n%s\n%s\n' "$player_url" "$title" "$episode_title" >&2
+
+                printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | while read -r line; do
+                    player_url=${line%\" data-id=*}
+                    episode_title=${line#*\">}
+                    [ -n "$player_url" ] && [ -n "$episode_title" ] && printf '%s\t%s\n' "$episode_title" "$player_url"
+                done
             fi
-        fi
-    done
+        ;;
+        html)
+            decoded_data=$(printf '%s' "$data" | awk '
+            {
+                while (match($0, /\\u[0-9a-fA-F]{4}/)) {
+                    hex = substr($0, RSTART+2, 4)
+                    char = sprintf("%c", strtonum("0x" hex))
+                    $0 = substr($0, 1, RSTART-1) char substr($0, RSTART+RLENGTH)
+                }
+                print
+            }' | tr -d '\\')
+            
+            printf '%s\n%s\n%s\n' "$player_url" "$title" "$episode_title" >&2
+        
+            printf '%s' "$decoded_data" | grep -oP '\{"name":"[^"]+","code":"<iframe src="[^"]+"' | while read -r episode; do
+                
+                episode_title=$(printf '%s' "$episode" | grep -oP '(?<={"name":")[^"]+')
+                player_url=$(printf '%s' "$episode" | grep -oP '(?<=src=")[^"]+')
 
-    {
-        printf "=== ОЗВУЧЕННЯ ===\n"
-        if [ -s "$temp_voice" ]; then
-            cat "$temp_voice"
-        fi
-        printf "=== СУБТИТРИ ===\n"
-        if [ -s "$temp_sub" ]; then
-            cat "$temp_sub"
-        fi
-    } > "$temp_final"
-
-    selected=$(
-        awk '
-        /^===/ {
-            printf "%s\t\n", "\t\x1b[1;32m" $0 "\x1b[0m\0"
-            next
-        }
-        { print }
-        ' "$temp_final" \
-        | fzf --layout=reverse \
-            --prompt="Виберіть варіант для $title: " \
-            --with-nth=2.. \
-            --delimiter='\t' \
-            --ansi \
-            --bind="esc:abort"
-    )
-
-    rm -f "$temp_voice" "$temp_sub" "$temp_final"
-
-    if [ -n "$selected" ]; then
-        ids=$(printf '%s' "$selected" | cut -f1)
-        type_id=${ids%%:*}
-        rest=${ids#*:}
-        group_id=${rest%%:*}
-        player_id=${rest#*:}
-
-        if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_${group_id}_[0-9]\">"; then
-            pattern="0_${type_id}_${group_id}_${player_id}"
-        elif printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]\">"; then
-            pattern="0_${type_id}_${player_id}"
-        else
-            pattern="0_${type_id}"
-        fi
-
-        first_episode=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | head -n1)
-        player_url=${first_episode%\" data-id=*}
-        episode_title=${first_episode#*\">}
-
-        printf '%s\n%s\n%s\n' "$player_url" "$title" "$episode_title" >&2
-
-        printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | while read -r line; do
-            url=${line%\" data-id=*}
-            episode=${line#*\">}
-            [ -n "$url" ] && [ -n "$episode" ] && printf '%s\t%s\n' "$episode" "$url"
-        done
-    fi
+                [ -n "$player_url" ] && [ -n "$episode_title" ] && printf '%s\t%s\n' "$episode_title" "$player_url"
+            done
+            ;;
+    esac
 }
 
 
@@ -555,7 +575,7 @@ if [ -n "$anime_url" ]; then
   title="URL"
   is_clean || printf "${BOLD}${MAGENTA}OK${NC}\n"
 else 
-    selected=$(anitube_search "$query" | fzf --delimiter='\t' --with-nth=1,3 --layout=reverse --ansi)
+    selected=$(anitube_search "$query" | fzf --delimiter='\t' --with-nth=1,3 --layout=reverse --ansi --cycle)
     is_clean || printf "${BOLD}${MAGENTA}OK${NC}\n"
     if [ -n "$selected" ]; then 
         link=$(echo "$selected" | cut -f2)
@@ -574,20 +594,14 @@ fi
 temp_episodes="${TMPDIR:-/tmp}/ani-ukr.episodes.$$"
 : > "$temp_episodes" || exit 1
 
-if printf '%s' "$playlist_data" | grep -q '^https\?://'; then
-    player_url=$(printf '%s' "$playlist_data" | sed -n '1p')
-    anime_title=$(printf '%s' "$playlist_data" | sed -n '2p')
-    episode_title="1"
-    printf "1\t%s\n" "$player_url" > "$temp_episodes"
-else
-    result=$(printf '%s\n' "$playlist_data" | process_playlist /dev/stdin "$title" 2>/tmp/headers.$$)
-    printf '%s' "$result" > "$temp_episodes"
-    
-    player_url=$(sed -n '1p' /tmp/headers.$$)
-    anime_title=$(sed -n '2p' /tmp/headers.$$)
-    episode_title=$(sed -n '3p' /tmp/headers.$$)
-    rm -f /tmp/headers.$$
-fi
+result=$(printf '%s\n' "$playlist_data" | process_playlist /dev/stdin "$title" 2>/tmp/headers.$$)
+echo "$result" > result.txt
+printf '%s' "$result" > "$temp_episodes"
+
+player_url=$(sed -n '1p' /tmp/headers.$$)
+anime_title=$(sed -n '2p' /tmp/headers.$$)
+episode_title=$(sed -n '3p' /tmp/headers.$$)
+rm -f /tmp/headers.$$
 
 if [ "$internal_player" != "browser" ]; then
     if [ -n "$episode_number" ]; then
@@ -619,6 +633,7 @@ if [ "$internal_player" != "browser" ]; then
             fzf --layout=reverse \
                 --prompt="Виберіть серію: " \
                 --delimiter='\t' \
+                --cycle \
                 --with-nth=1)
                 
         if [ -n "$selected_episode" ]; then
@@ -672,6 +687,7 @@ show_menu() {
         choice=$(printf "Наступна серія\nПовторити серію\nПопередня серія\nОбрати серію\nОбрати якість\nВийти" | \
             fzf --layout=reverse \
                 --prompt="Оберіть дію: " \
+                --cycle \
                 --header="$anime_title - $episode_title")
 
         case "$choice" in
@@ -741,6 +757,7 @@ show_menu() {
                     fzf --layout=reverse \
                         --prompt="Виберіть серію: " \
                         --delimiter='\t' \
+                        --cycle \
                         --with-nth=1)
                 if [ -n "$selected_episode" ]; then
                     selected_title=$(printf '%s' "$selected_episode" | cut -f1)
@@ -760,7 +777,7 @@ show_menu() {
                 ;;
             "Обрати якість")
                 quality=$(printf "360p\n480p\n720p\n1080p" | \
-                    fzf --layout=reverse --prompt="Виберіть якість: ")
+                    fzf --layout=reverse --cycle --prompt="Виберіть якість: ")
                 is_clean || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
                 if [ -n "$quality" ]; then
                     if ! new_episode_url=$(extract_episode_url "$player_url" "$quality"); then
@@ -854,6 +871,7 @@ case "$internal_player" in
                 fzf --layout=reverse \
                     --prompt="Виберіть серію для завантаження: " \
                     --delimiter='\t' \
+                    --cycle \
                     --with-nth=1)
             
             if [ -n "$selected_episode" ]; then
