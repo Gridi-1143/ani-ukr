@@ -6,7 +6,8 @@ ani-ukr це програма для перегляду аніме з сайту
 	Демонстрація
 </h1>
 
-[ani-ukr-preview.webm](https://github.com/user-attachments/assets/7a4770e8-6d58-464b-9ba5-1f9747af94b8)
+[ani-ukr-preview.webm](https://github.com/user-attachments/assets/13c1561e-1808-4c59-834b-3ffd206d9236)
+
 
 ## Спершу потрібно встановити залежності
 - grep
