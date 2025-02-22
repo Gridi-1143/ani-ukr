@@ -2,6 +2,12 @@
 ani-ukr це програма для перегляду аніме з сайту <a href="https://anitube.in.ua/">Anitube.in.ua</a> в терміналі. Працює на Linux (та можливо MacOS). Натхнення для проєкту взято з <a href="https://github.com/pystardust/ani-cli">ani-cli</a>
 </h5>
 
+<h2 align="center">
+Демонстрація
+</h2>
+
+[ani-ukr-preview.webm](https://github.com/user-attachments/assets/e74bbaed-c40d-49bb-9000-495e5d19d997)
+
 ## Спершу потрібно встановити залежності
 - grep
 - sed
