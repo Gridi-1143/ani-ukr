@@ -19,7 +19,7 @@ episode_number=""
 episode_range_start=""
 episode_range_end=""
 download_dir="."
-thistory="/tmp/ani-ukr_history"
+thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
 version=1.3
 
@@ -127,7 +127,7 @@ while [ $# -gt 0 ]; do
             download_dir="$1"
             ;;
         -E|--errors) errors_mode=1 ;;
-        -c|--continue) cat $thistory && exit 0 ;;
+        -c|--continue) cat $thistory ; exit 0 ;;
         -C|--clean) rm -f $thistory && printf "${BLUE}Історію очищено${NC}\n" && exit 0;;
         --vlc) internal_player="vlc" ;;
         --mpv) internal_player="mpv" ;;
@@ -663,7 +663,7 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || echo $anime_title $episode_title >> $thistory
+    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory
 }
 
 open_in_browser() {
