@@ -663,7 +663,8 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory
+    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || \ 
+    ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
 }
 
 open_in_browser() {
