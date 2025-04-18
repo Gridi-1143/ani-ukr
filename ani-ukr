@@ -21,7 +21,7 @@ episode_range_end=""
 download_dir="."
 thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
-version=1.3
+version=1.4
 
 version_info() {
     printf "Версія ${version}\n"
@@ -169,29 +169,29 @@ done
 query=$(printf "%s" "$query" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
 set_internal_player() {
-    if [ -n "$internal_player" ]; then
+    [ -n "$internal_player" ] && {
         case "$internal_player" in
             mpv)
-                if ! command -v mpv >/dev/null 2>&1; then
+                [ -x $(command -v mpv >/dev/null 2>&1) ] || {
                     printf "${RED}mpv не знайдено${NC}\n" >&2
                     exit 1
-                fi
+                }
                 ;;
             vlc)
-                if ! command -v vlc >/dev/null 2>&1; then
+                [ -x $(command -v vlc >/dev/null 2>&1) ] || {
                     printf "${RED}vlc не знайдено${NC}\n" >&2
                     exit 1
-                fi
+                }
                 ;;
             iina)
-                if ! command -v iina >/dev/null 2>&1; then
+                [ -x $(command -v iina >/dev/null 2>&1) ] || {
                     printf "${RED}iina не знайдено${NC}\n" >&2
                     exit 1
-                fi
+                }
                 ;;
         esac
         return 0
-    fi
+    }
     command -v iina >/dev/null 2>&1 && internal_player="iina" && return 0
     command -v mpv >/dev/null 2>&1 && internal_player="mpv" && return 0
     command -v vlc >/dev/null 2>&1 && internal_player="vlc" && return 0
@@ -209,10 +209,10 @@ extract_episode_url() {
         -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
         -H "Accept-Language: uk-UA,uk;q=0.8,en-US;q=0.5,en;q=0.3")
     
-    if [ -z "$html_content" ]; then
+    [ -z "$html_content" ] && {
         printf "${RED}Помилка завантаження сторінки плеєра${NC}\n" >&2
         return 1
-    fi
+    }
 
     # Пошук відео URL в різних форматах
     video_data=$(printf '%s' "$html_content" | sed -n '
@@ -231,40 +231,40 @@ extract_episode_url() {
         *'['*']'*)
             if [ -n "$requested_quality" ]; then
                 episode_url=$(printf '%s' "$video_data" | sed -n "s/.*\[$quality\]\([^,]*\).*/\1/p")
-                if [ -z "$episode_url" ]; then
+                [ -z "$episode_url" ] && {
                     printf "${RED}Якість $quality не знайдена${NC}\n" >&2
                     sleep 2
                     return 1
-                fi
+                }
             else
                 episode_url=$(printf '%s' "$video_data" | sed 's/\[[^]]*\]//' | cut -d',' -f1)
             fi
             ;;
         *mp4upload.com*)
-            if [ -n "$requested_quality" ]; then
+            [ -n "$requested_quality" ] && {
                 printf "${RED}Якість для цього плеєру обрати не можна${NC}\n" >&2
                 sleep 2
                 return 1
-            fi
+            }
             [ "$internal_player" = "vlc" ] && {
                 printf "${RED}VLC не може відтворювати плеєр MP4\n${NC}" >&2
                 sleep 2
                 return 1
             }
             mp4_id=$(printf '%s' "$html_content" | sed -n 's/.*embed-\([^"]*\)\.html.*/\1/p')
-            if [ -z "$mp4_id" ]; then
+            [ -z "$mp4_id" ] && {
                 mp4_id=$(printf '%s' "$html_content" | sed -n 's/.*mp4upload\.com\/\([^"]*\)".*/\1/p')
-            fi
-            if [ -n "$mp4_id" ]; then
+            }
+            [ -n "$mp4_id" ] && {
                 episode_url="https://mp4upload.com/embed-$mp4_id.html"
-            fi
+            }
             ;;
         *) 
-            if [ -n "$requested_quality" ]; then
+            [ -n "$requested_quality" ] && {
                 printf "${RED}Якість для цього плеєру обрати не можна${NC}\n" >&2
                 sleep 2
                 return 1
-            fi
+            }
             episode_url="$video_data"
             ;;
     esac
@@ -282,10 +282,10 @@ download() {
     url="$1"
     filename="$2"
     
-    if [ ! -d "$download_dir" ]; then
+    [ ! -d "$download_dir" ] && {
         printf "${RED}Директорія $download_dir не існує${NC}\n" >&2
         return 1
-    fi
+    }
 
     case "$url" in
         *m3u8*)
@@ -321,10 +321,10 @@ extract_user_hash() {
   url="$1"
   html=$(curl -s "$url")
 
-  if [ -z "$html" ]; then
-    printf "${RED}Не вдалося отримати HTML-код з посилання${NC}: $url"
-    return 1
-  fi
+  [ -z "$html" ] && {
+      printf "${RED}Не вдалося отримати HTML-код з посилання${NC}: $url"
+      return 1
+  }
 
   echo "$html" | grep -oP 'var dle_login_hash = '\''\K[^'\'']+'
 }
@@ -384,15 +384,15 @@ anitube_search() {
     search_start=$((search_start + 1))
     result_from=$((result_from + per_page))
 
-    if [ $search_start -le $total_pages ]; then
-      echo "----------"
-    fi
+    [ $search_start -le $total_pages ] && {
+        echo "----------"
+    }
   done
 
-  if [ $result_count -eq 1 ]; then
-    printf "${RED}Нічого не знайдено для запиту${NC}: $query"
-    exit 1
-  fi
+  [ $result_count -eq 1 ] && {
+      printf "${RED}Нічого не знайдено для запиту${NC}: $query"
+      exit 1
+  }
 }
 
 # Зібрати інфу про плєер 
@@ -447,7 +447,7 @@ process_playlist() {
                 type_name=${type_line#*\">}
 
                 output_file="$temp_voice"
-                [ "$type_name" = "СУБТИТРИ" ] && output_file="$temp_sub"
+                ([ "$type_name" = "СУБТИТРИ" ] || [ "$type_name" = "Субтитри" ] || [ "$type_name" = "субтитри" ]) && output_file="$temp_sub"
 
                 if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]_[0-9]\">"; then
                     printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_)[0-9]\">[^<]+" | while read -r group_line; do
@@ -460,34 +460,34 @@ process_playlist() {
                             pattern="0_${type_id}_${group_id}_${player_id}"
                             episode_count=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | wc -l)
 
-                            if [ "$episode_count" -gt 0 ]; then
+                            [ "$episode_count" -gt 0 ] && {
                                 printf "%s:%s:%s\t%s (серій:%d) {%s}\n" \
                                     "$type_id" "$group_id" "$player_id" \
                                     "$group_name" "$episode_count" "$player_name" >> "$output_file"
-                            fi
+                            }
                         done
                     done
                 else
                     pattern="0_${type_id}"
                     episode_count=$(printf '%s' "$response" | grep -oP "(?<=<li data-file=\")[^\"]+\" data-id=\"${pattern}[^\"]*\">[^<]+" | wc -l)
 
-                    if [ "$episode_count" -gt 0 ]; then
+                    [ "$episode_count" -gt 0 ] && {
                         printf "%s:%s:%s\t%s (серій:%d)\n" \
                             "$type_id" "0" "0" \
                             "$type_name" "$episode_count" >> "$output_file"
-                    fi
+                    }
                 fi
             done
 
             {
                 printf "=== ОЗВУЧЕННЯ ===\n"
-                if [ -s "$temp_voice" ]; then
+                [ -s "$temp_voice" ] && {
                     cat "$temp_voice"
-                fi
+                }
                 printf "=== СУБТИТРИ ===\n"
-                if [ -s "$temp_sub" ]; then
+                [ -s "$temp_sub" ] && {
                     cat "$temp_sub"
-                fi
+                }
             } > "$temp_final"
 
             selected=$(
@@ -509,7 +509,7 @@ process_playlist() {
 
             rm -f "$temp_voice" "$temp_sub" "$temp_final"
 
-            if [ -n "$selected" ]; then
+            [ -n "$selected" ] && {
                 ids=$(printf '%s' "$selected" | cut -f1)
                 type_id=${ids%%:*}
                 rest=${ids#*:}
@@ -531,7 +531,7 @@ process_playlist() {
                     episode_title=${line#*\">}
                     [ -n "$player_url" ] && [ -n "$episode_title" ] && printf '%s\t%s\n' "$episode_title" "$player_url"
                 done
-            fi
+            }
         ;;
         html)
             decoded_data=$(printf '%s' "$data" | awk '
@@ -558,18 +558,20 @@ process_playlist() {
 }
 
 
-if [ -n "$episode_number" ] && [ -n "$episode_range_start" ] || \
-    ( [ "$force_flag" -eq 1 ] && [ "$internal_player" = "browser" ] ) && [ -z "$episode_range_start" ]; then
-    printf "${RED}Непривильне поєднання прпорців${NC}\n"
+(   { [ -n "$episode_number" ] && [ -n "$episode_range_start" ];} || \
+    { [ "$force_flag" -eq 1 ] && [ "$internal_player" = "browser" ] && [ -z "$episode_range_start" ];} || \
+    { [ "$force_flag" -eq 0 ] && [ "$internal_player" = "browser" ] && [ -n "$episode_range_start" ];} \
+) && {
+    printf "${RED}Неправильне поєднання прапорців${NC}\n"
     exit 0
-fi
+}
 
 set_internal_player
 
-if [ -z "$anime_url" ] && [ -z "$query" ]; then
+( [ -z "$anime_url" ] && [ -z "$query" ] ) && {
     errors_only || printf "${BOLD}${MAGENTA}Введіть назву аніме${NC}: "
     read query
-fi
+}
 
 [ -z "$query" ] && [ -z $anime_url ] && { printf "${RED}Назва аніме не введена${NC}\n"; exit 1; }
 
@@ -591,9 +593,7 @@ else
 fi
 
 errors_only || printf "${BOLD}${MAGENTA}Збираємо серії...${NC}\n"
-if ! playlist_data=$(fetch_playlist "$link"); then
-    exit 1
-fi
+playlist_data=$(fetch_playlist "$link") || exit 1
 
 temp_episodes="${TMPDIR:-/tmp}/ani-ukr.episodes.$$"
 : > "$temp_episodes" || exit 1
@@ -606,48 +606,40 @@ anime_title=$(sed -n '2p' /tmp/headers.$$)
 episode_title=$(sed -n '3p' /tmp/headers.$$)
 rm -f /tmp/headers.$$
 
-if [ "$internal_player" != "browser" ]; then
-    if [ -n "$episode_number" ]; then
-        episode_data=$(grep "^${episode_number}[[:space:]]" "$temp_episodes")
-        if [ -n "$episode_data" ]; then
-            episode_title="$episode_number"
-            player_url=$(printf '%s' "$episode_data" | cut -f2)
-            if ! episode_url=$(extract_episode_url "$player_url" "$quality"); then
-                exit 1
-            fi
-        else
-            printf "${RED}Епізод $episode_number не знайдено${NC}\n" >&2
-            exit 1
-        fi
-    elif [ -n "$episode_range_start" ]; then
-        episode_data=$(grep "^${episode_range_start}[[:space:]]" "$temp_episodes")
-        if [ -n "$episode_data" ]; then
-            episode_title="$episode_range_start"
-            player_url=$(printf '%s' "$episode_data" | cut -f2)
-            if ! episode_url=$(extract_episode_url "$player_url" "$quality"); then
-                exit 1
-            fi
-        else
-            printf "${RED}Епізод $episode_range_start не знайдено${NC}\n" >&2
-            exit 1
-        fi
+if [ -n "$episode_number" ]; then
+    episode_data=$(grep "^${episode_number}[[:space:]]" "$temp_episodes")
+    if [ -n "$episode_data" ]; then
+        episode_title="$episode_number"
+        player_url=$(printf '%s' "$episode_data" | cut -f2)
+        episode_url=$(extract_episode_url "$player_url" "$quality") || exit 1
     else
-        selected_episode=$(sort -V "$temp_episodes" | \
-            fzf --layout=reverse \
-                --prompt="Виберіть серію: " \
-                --delimiter='\t' \
-                --cycle \
-                --with-nth=1)
-                
-        if [ -n "$selected_episode" ]; then
-            episode_title=$(printf '%s' "$selected_episode" | cut -f1)
-            player_url=$(printf '%s' "$selected_episode" | cut -f2)
-            if ! episode_url=$(extract_episode_url "$player_url" "$quality"); then
-                exit 1
-            fi
-        else
-            exit 1
-        fi
+        printf "${RED}Епізод $episode_number не знайдено${NC}\n" >&2
+        exit 1
+    fi
+elif [ -n "$episode_range_start" ]; then
+    episode_data=$(grep "^${episode_range_start}[[:space:]]" "$temp_episodes")
+    if [ -n "$episode_data" ]; then
+        episode_title="$episode_range_start"
+        player_url=$(printf '%s' "$episode_data" | cut -f2)
+        episode_url=$(extract_episode_url "$player_url" "$quality") || exit 1
+    else
+        printf "${RED}Епізод $episode_range_start не знайдено${NC}\n" >&2
+        exit 1
+    fi
+else
+    selected_episode=$(sort -V "$temp_episodes" | \
+        fzf --layout=reverse \
+        --prompt="Виберіть серію: " \
+        --delimiter='\t' \
+        --cycle \
+        --with-nth=1)
+
+    if [ -n "$selected_episode" ]; then
+        episode_title=$(printf '%s' "$selected_episode" | cut -f1)
+        player_url=$(printf '%s' "$selected_episode" | cut -f2)
+        episode_url=$(extract_episode_url "$player_url" "$quality") || exit 1
+    else
+        exit 1
     fi
 fi
 
@@ -663,8 +655,7 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || \ 
-    ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
+    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
 }
 
 open_in_browser() {
@@ -705,7 +696,7 @@ show_menu() {
                     next_title=$(printf '%s' "$next_episode" | cut -f1)
                     next_url=$(printf '%s' "$next_episode" | cut -f2)
                     errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($next_title): ${CYAN}$next_url${NC}\n"
-                    if next_episode_url=$(extract_episode_url "$next_url" "$quality"); then
+                    next_episode_url=$(extract_episode_url "$next_url" "$quality") && {
                         errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($next_title): ${CYAN}$next_episode_url${NC}\n"
                         [ "$force_flag" -eq 0 ] && errors_only || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
                         [ "$force_flag" -eq 0 ] && wait
@@ -714,7 +705,7 @@ show_menu() {
                         episode_url=$next_episode_url
                         play_episode &
                         show_menu && return 0
-                    fi
+                    }
                 else
                     printf "${RED}Наступної серії немає${NC}\n"
                     sleep 2
@@ -723,13 +714,13 @@ show_menu() {
                 ;;
             "Повторити серію")
                 errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
-                if episode_url=$(extract_episode_url "$player_url" "$quality"); then
+                episode_url=$(extract_episode_url "$player_url" "$quality") && {
                     errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$episode_url${NC}\n"
                     [ "$force_flag" -eq 0 ] && errors_only || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
                     [ "$force_flag" -eq 0 ] && wait
                     play_episode &
                     show_menu && return 0
-                fi
+                }
                 ;;
             "Попередня серія")
                 prev_episode=$(sort -V "$temp_episodes" | awk -v current="$episode_title" '
@@ -741,7 +732,7 @@ show_menu() {
                     prev_title=$(printf '%s' "$prev_episode" | cut -f1)
                     prev_url=$(printf '%s' "$prev_episode" | cut -f2)
                     errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($prev_title): ${CYAN}$prev_url${NC}\n"
-                    if prev_episode_url=$(extract_episode_url "$prev_url" "$quality"); then
+                    prev_episode_url=$(extract_episode_url "$prev_url" "$quality") && {
                         errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($prev_title): ${CYAN}$prev_episode_url${NC}\n"
                         [ "$force_flag" -eq 0 ] && errors_only || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
                         [ "$force_flag" -eq 0 ] && wait
@@ -750,7 +741,7 @@ show_menu() {
                         episode_url=$prev_episode_url
                         play_episode &
                         show_menu && return 0
-                    fi
+                    }
                 else
                     printf "${RED}Попередньої серії немає${NC}\n"
                     sleep 2
@@ -768,7 +759,7 @@ show_menu() {
                     selected_title=$(printf '%s' "$selected_episode" | cut -f1)
                     selected_url=$(printf '%s' "$selected_episode" | cut -f2)
                     errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($selected_title): ${CYAN}$selected_url${NC}\n"
-                    if selected_episode_url=$(extract_episode_url "$selected_url" "$quality"); then
+                    selected_episode_url=$(extract_episode_url "$selected_url" "$quality") && {
                         errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($selected_title): ${CYAN}$selected_episode_url${NC}\n"
                         [ "$force_flag" -eq 0 ] && errors_only || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
                         [ "$force_flag" -eq 0 ] && wait
@@ -777,7 +768,7 @@ show_menu() {
                         episode_url=$selected_episode_url
                         play_episode &
                         show_menu && return 0
-                    fi
+                    }
                 fi
                 ;;
             "Обрати якість")
@@ -785,10 +776,10 @@ show_menu() {
                     fzf --layout=reverse --cycle --prompt="Виберіть якість: ")
                 errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
                 if [ -n "$quality" ]; then
-                    if ! new_episode_url=$(extract_episode_url "$player_url" "$quality"); then
+                    new_episode_url=$(extract_episode_url "$player_url" "$quality") || {
                         quality="" 
                         continue 
-                    fi
+                    }
                     errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$new_episode_url${NC}\n"
                     [ "$force_flag" -eq 0 ] && errors_only || printf "${BOLD}${BLUE}Закрийте серію в програвачі щоб продовжити виконання${NC}\n"
                     [ "$force_flag" -eq 0 ] && wait
@@ -819,12 +810,12 @@ case "$internal_player" in
                 }
             ')
             
-            if [ "$force_flag" -eq 1 ]; then
+            [ "$force_flag" -eq 1 ] && {
                 printf '%s\n' "$episode_urls" | while read url; do
                     errors_only || printf "${BOLD}${BLUE}URL плеєру${NC}: ${CYAN}$url${NC}\n"
                     open_in_browser "$url" > /dev/null 2>&1
                 done
-            fi
+            }
         else
             errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} (${episode_title}): ${CYAN}$player_url${NC}\n"
             [ -n "$player_url" ] && open_in_browser "$player_url" > /dev/null 2>&1
@@ -841,12 +832,12 @@ case "$internal_player" in
                 }
             ' | while IFS="$(printf '\t')" read -r ep_title ep_url; do
             errors_only || printf "${BOLD}${BLUE}Відтворюємо серію${NC} ($ep_title): ${CYAN}$episode_url${NC}\n"
-                if episode_url=$(extract_episode_url "$ep_url" "$quality"); then
+                episode_url=$(extract_episode_url "$ep_url" "$quality") && {
                     episode_title=$ep_title
                     player_url=$ep_url
                     play_episode
                     wait
-                fi
+                }
             done
         else
             [ -n "$episode_url" ] && {
@@ -867,9 +858,9 @@ case "$internal_player" in
                 }
             ' | while IFS="$(printf '\t')" read -r ep_title ep_url; do
                 errors_only || printf "${BOLD}${BLUE}Завантажуємо серію${NC} ($ep_title): ${CYAN}$episode_url${NC}\n"
-                if episode_url=$(extract_episode_url "$ep_url" "$quality"); then
+                episode_url=$(extract_episode_url "$ep_url" "$quality") && {
                     download "$episode_url" "${anime_title}_${ep_title}"
-                fi
+                }
             done
         else
             selected_episode=$(sort -V "$temp_episodes" | \
@@ -879,14 +870,14 @@ case "$internal_player" in
                     --cycle \
                     --with-nth=1)
             
-            if [ -n "$selected_episode" ]; then
+            [ -n "$selected_episode" ] && {
                 episode_title=$(printf '%s' "$selected_episode" | cut -f1)
                 player_url=$(printf '%s' "$selected_episode" | cut -f2)
-                if episode_url=$(extract_episode_url "$player_url" "$quality"); then
+                episode_url=$(extract_episode_url "$player_url" "$quality") && {
                     errors_only || printf "${BOLD}${MAGENTA}Завантажуємо...${NC}\n"
                     download "$episode_url" "${anime_title}_${episode_title}"
-                fi
-            fi
+                }
+            }
         fi
         ;;
 esac
