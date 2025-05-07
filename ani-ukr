@@ -21,7 +21,7 @@ episode_range_end=""
 download_dir="."
 thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
-version=1.4
+version=1.4.5
 
 version_info() {
     printf "Версія ${version}\n"
@@ -39,7 +39,7 @@ update() {
     [ -z "$latest_version" ] && printf "${RED}Помилка отримання версії${NC}\n" && return 1
 
     if [ "$version" = "$latest_version" ]; then
-        errors_only || printf "${BOLD}${BLUE}Встановлено останню версію${NC}\n"
+        errors_only || printf "${BOLD}${BLUE}У вас вже остання версія${NC}\n"
         return 0
     fi
 
@@ -438,7 +438,7 @@ process_playlist() {
             decoded_data=$(printf '%s' "$data" | jq -r .)
             response=$(printf '%s' "$decoded_data" | jq -r .response | tr -d '\n\r')
 
-            temp_voice=$(mktemp)
+            temp_dub=$(mktemp)
             temp_sub=$(mktemp)
             temp_final=$(mktemp)
 
@@ -446,13 +446,27 @@ process_playlist() {
                 type_id=${type_line%%\">*}
                 type_name=${type_line#*\">}
 
-                output_file="$temp_voice"
+                output_file="$temp_dub"
                 ([ "$type_name" = "СУБТИТРИ" ] || [ "$type_name" = "Субтитри" ] || [ "$type_name" = "субтитри" ]) && output_file="$temp_sub"
 
                 if printf '%s' "$response" | grep -q "data-id=\"0_${type_id}_[0-9]_[0-9]\">"; then
                     printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_)[0-9]\">[^<]+" | while read -r group_line; do
                         group_id=${group_line%%\">*}
                         group_name=${group_line#*\">}
+                        type_id=${type_line%%\">*}
+                        type_name=${type_line#*\">}
+                        temp_name="$type_name"
+                        temp_id="$type_id"
+
+                        #заміна в випадку попадання номеру гурту в місце для номеру типу
+                        [ "$group_name" = "ОЗВУЧЕННЯ" ] || [ "$group_name" = "Озвучення" ] || [ "$group_name" = "озвучення" ] && {
+                            [ "$type_name" = "" ] || \
+                            type_name="$group_name" && group_name="$temp_name" && output_file="$temp_dub"
+                        }
+                        [ "$group_name" = "СУБТИТРИ" ] || [ "$group_name" = "Субтитри" ] || [ "$group_name" = "субтитри" ] && {
+                            [ "$type_name" = "" ] || \
+                            type_name="$group_name" && group_name="$temp_name" && output_file="$temp_sub"
+                        }
 
                         printf '%s' "$response" | grep -oP "(?<=<li data-id=\"0_${type_id}_${group_id}_)[0-9]\">[^<]+" | while read -r player_line; do
                             player_id=${player_line%%\">*}
@@ -481,8 +495,8 @@ process_playlist() {
 
             {
                 printf "=== ОЗВУЧЕННЯ ===\n"
-                [ -s "$temp_voice" ] && {
-                    cat "$temp_voice"
+                [ -s "$temp_dub" ] && {
+                    cat "$temp_dub"
                 }
                 printf "=== СУБТИТРИ ===\n"
                 [ -s "$temp_sub" ] && {
@@ -507,7 +521,7 @@ process_playlist() {
                     --cycle
             )
 
-            rm -f "$temp_voice" "$temp_sub" "$temp_final"
+            rm -f "$temp_dub" "$temp_sub" "$temp_final"
 
             [ -n "$selected" ] && {
                 ids=$(printf '%s' "$selected" | cut -f1)
