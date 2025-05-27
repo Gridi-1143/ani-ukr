@@ -19,9 +19,11 @@ episode_number=""
 episode_range_start=""
 episode_range_end=""
 download_dir="."
+debug=""
 thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
-version=1.4.5
+forced_quality=0
+version=1.5
 
 version_info() {
     printf "Версія ${version}\n"
@@ -63,7 +65,8 @@ help_info() {
     -i, --iina             Використовувати iina.
     -b, --browser          Використовувати браузер.
     -d, --download         Завантажити серію замість перегляду.
-    -D, --download-dir     Вказати директорію для завантаження.
+    -dd, --download-dir    Вказати директорію для завантаження.
+    -D, --debug            Записувати етапи виконання в debug.txt.
     -E, --errors           Не показувати повідомлення якщо це не помилка.
     -c, --continue         Відобразити історію перегляду
     -C, --clear            Очистити історію перегляду
@@ -96,6 +99,7 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             quality="$1"
+            forced_quality=1
             ;;
         -e|--episode)
             shift
@@ -118,7 +122,7 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             ;;
-        -D|--download-dir)
+        -dd|--download-dir)
             shift
             if [ $# -eq 0 ]; then
                 printf "${RED}Вкажіть директорію для завантаження${NC}\n" >&2
@@ -134,11 +138,12 @@ while [ $# -gt 0 ]; do
         --iina) internal_player="iina" ;;
         --browser) internal_player="browser" ;;
         --download) internal_player="download" ;;
+        --debug) debug="1" ;;
         --force) force_flag=1 ;;
         -U|--update) update; exit 0 ;;
         -V|--version) version_info; exit 0 ;;
         -h|--help) help_info; exit 0 ;;
-        -[vmibdCf]*)
+        -[vmibdDCf]*)
             flag=${1#-}
             while [ -n "$flag" ]; do
                 case "${flag%"${flag#?}"}" in
@@ -147,6 +152,7 @@ while [ $# -gt 0 ]; do
                     i) internal_player="iina" ;;
                     b) internal_player="browser" ;;
                     d) internal_player="download" ;;
+                    D) debug="1" ;;
                     f) force_flag=1 ;;
                     E) errors_mode=1 ;;
                     *) printf "${RED}Невідомий параметр: %s${NC}\n" "$flag" >&2; exit 1 ;;
@@ -215,30 +221,28 @@ extract_episode_url() {
     }
 
     # Пошук відео URL в різних форматах
-    video_data=$(printf '%s' "$html_content" | sed -n '
-        s/.*file:"\([^"]*\)".*/\1/p;
-        s/.*file: "\([^"]*\)".*/\1/p;
+    avail_quality=$(printf '%s' "$html_content" | sed -n '
+        s/.*file:[[:space:]]*'\''\([^'\'']*\)'\''.*/\1/p;
+        s/.*file:[[:space:]]*"\([^"]*\)".*/\1/p;
         s/.*src="\([^"]*\.m3u8[^"]*\)".*/\1/p;
-        s/.*url: "\([^"]*\)".*/\1/p;
-        s/.*src:"\([^"]*\)".*/\1/p
+        s/.*url:[[:space:]]*"\([^"]*\)".*/\1/p;
+        s/.*src:[[:space:]]*"\([^"]*\)".*/\1/p
     ')
 
-    default_quality=$(printf '%s' "$html_content" | sed -n 's/.*default_quality:"\([^"]*\)".*/\1/p')
-    quality=${requested_quality:-$default_quality}
+    quality=$(printf '%s' "$avail_quality" | sed -n "s/.*\[$requested_quality\]\([^,]*\).*/\1/p")
+    [ -n "$debug" ] && echo -e "[D] url with avail_quality: $avail_quality\n[D] req_quality: $requested_quality\n[D] ep_quality: $quality\n" >> $download_dir/debug.txt
 
-    case "$video_data" in
-        # Формат з якостями [720p]url,[1080p]url, треба допрацювати
+    case "$avail_quality" in
+        # Формат з якостями [720p]url,[1080p]url
         *'['*']'*)
-            if [ -n "$requested_quality" ]; then
-                episode_url=$(printf '%s' "$video_data" | sed -n "s/.*\[$quality\]\([^,]*\).*/\1/p")
-                [ -z "$episode_url" ] && {
-                    printf "${RED}Якість $quality не знайдена${NC}\n" >&2
-                    sleep 2
-                    return 1
-                }
-            else
-                episode_url=$(printf '%s' "$video_data" | sed 's/\[[^]]*\]//' | cut -d',' -f1)
+            if [ -n "$requested_quality" ] && [ -z "$quality" ]; then
+                printf "${RED}Шукану якість ($requested_quality) не вдалося знайти, використовуємо найкращу доступну${NC}\n" >&2
+                [ "$forced_quality" -eq 0 ] && requested_quality=""
+            elif [ -n "$requested_quality" ];then
+                episode_url="$quality"
+                break
             fi
+            episode_url=$(printf '%s' "$avail_quality" | rev | cut -d',' -f1 | rev | sed 's|^\[.*\]||')
             ;;
         *mp4upload.com*)
             [ -n "$requested_quality" ] && {
@@ -259,13 +263,13 @@ extract_episode_url() {
                 episode_url="https://mp4upload.com/embed-$mp4_id.html"
             }
             ;;
+            #невідомий плеєр
         *) 
-            [ -n "$requested_quality" ] && {
-                printf "${RED}Якість для цього плеєру обрати не можна${NC}\n" >&2
-                sleep 2
-                return 1
+            [ -n "$requested_quality" ] && [ -z "$quality" ] && {
+                printf "${RED}Шукану якість ($requested_quality) не вдалося знайти, використовуємо найкращу доступну${NC}\n" >&2
+                [ "$forced_quality" -eq 0 ] && requested_quality=""
             }
-            episode_url="$video_data"
+            episode_url="$avail_quality"
             ;;
     esac
 
@@ -413,7 +417,7 @@ fetch_playlist() {
       -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
       "$url")
 
-    response=$(printf '%s' "$page_html" | grep -o 'RalodePlayer\.init([^)]*)')
+    response=$(printf '%s' "$page_html" | sed -n 's/.*\(RalodePlayer\.init(.*)\);.*/\1/p' | head -1)
     
     [ -z "$response" ] && {
       printf "${RED}Не вдалося знайти список серій${NC}\n" >&2 
@@ -608,12 +612,19 @@ fi
 
 errors_only || printf "${BOLD}${MAGENTA}Збираємо серії...${NC}\n"
 playlist_data=$(fetch_playlist "$link") || exit 1
+[ -n "$debug" ] && \
+if [ $(echo "$playlist_data" | head -n 1) == "json" ]; then 
+    echo -e "[D] playlist_data_raw(json with jq):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
+else 
+    echo -e "[D] playlist_data_raw(html):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
+fi
 
 temp_episodes="${TMPDIR:-/tmp}/ani-ukr.episodes.$$"
 : > "$temp_episodes" || exit 1
 
 result=$(printf '%s\n' "$playlist_data" | process_playlist /dev/stdin "$title" 2>/tmp/headers.$$)
 printf '%s' "$result" > "$temp_episodes"
+[ -n "$debug" ] && echo -e "[D] playlist_data: \n{\n$result\n}\n" >> debug.txt
 
 player_url=$(sed -n '1p' /tmp/headers.$$)
 anime_title=$(sed -n '2p' /tmp/headers.$$)
@@ -622,6 +633,7 @@ rm -f /tmp/headers.$$
 
 if [ -n "$episode_number" ]; then
     episode_data=$(grep "^${episode_number}[[:space:]]" "$temp_episodes")
+    [ -n "$debug" ] && echo -e "[D] exact_episode_data: $episode_data\n" >> debug.txt
     if [ -n "$episode_data" ]; then
         episode_title="$episode_number"
         player_url=$(printf '%s' "$episode_data" | cut -f2)
@@ -632,6 +644,7 @@ if [ -n "$episode_number" ]; then
     fi
 elif [ -n "$episode_range_start" ]; then
     episode_data=$(grep "^${episode_range_start}[[:space:]]" "$temp_episodes")
+    [ -n "$debug" ] && echo -e "[D] range_episode_data_start: $episode_data\n" >> debug.txt
     if [ -n "$episode_data" ]; then
         episode_title="$episode_range_start"
         player_url=$(printf '%s' "$episode_data" | cut -f2)
@@ -669,7 +682,7 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s/$anime_title .*/$anime_title $episode_title/g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
+    grep -qs "$anime_title " $thistory && sed -i "s|$anime_title .*|$anime_title $episode_title|g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
 }
 
 open_in_browser() {
@@ -786,12 +799,12 @@ show_menu() {
                 fi
                 ;;
             "Обрати якість")
-                quality=$(printf "360p\n480p\n720p\n1080p" | \
+                requested_quality=$(printf "360p\n480p\n720p\n1080p" | \
                     fzf --layout=reverse --cycle --prompt="Виберіть якість: ")
                 errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
-                if [ -n "$quality" ]; then
-                    new_episode_url=$(extract_episode_url "$player_url" "$quality") || {
-                        quality="" 
+                if [ -n "$requested_quality" ]; then
+                    new_episode_url=$(extract_episode_url "$player_url" "$requested_quality") || {
+                        [ "$forced_quality" -eq 0] && requested_quality="" 
                         continue 
                     }
                     errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$new_episode_url${NC}\n"
