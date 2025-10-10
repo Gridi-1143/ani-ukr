@@ -654,7 +654,6 @@ printf '%s' "$result" > "$temp_episodes"
 player_url=$(sed -n '1p' /tmp/headers.$$)
 anime_title=$(sed -n '2p' /tmp/headers.$$)
 episode_title=$(sed -n '3p' /tmp/headers.$$)
-cat /tmp/headers.$$ > ca.txt
 rm -f /tmp/headers.$$
 
 if [ -n "$episode_number" ]; then
