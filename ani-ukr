@@ -14,6 +14,7 @@ query=""
 force_flag=0
 errors_mode=0
 anime_url=""
+continued_url=""
 internal_player=""
 episode_number=""
 episode_range_start=""
@@ -23,7 +24,7 @@ debug=""
 thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
 forced_quality=0
-version=1.5
+version=1.5.1
 
 version_info() {
     printf "Версія ${version}\n"
@@ -48,6 +49,22 @@ update() {
     curl -s "https://raw.githubusercontent.com/Gridi-1143/ani-ukr/main/ani-ukr" > "$script_path" && \
     chmod +x "$script_path" && \
     errors_only || printf "${BOLD}${BLUE}Оновлено до версії $latest_version${NC}\n"
+}
+
+continue_ep() {
+    [ ! -s "$thistory" ] && {
+        printf "${RED}Історія переглядів порожня.${NC}\n" >&2
+        return 1
+    }
+
+    selected_line=$(cat "$thistory" | \
+        awk '{url=$NF; $NF=""; print $0 "\t" url}' | \
+        fzf --delimiter='\t' --with-nth=1 --prompt="Оберіть аніме для продовження: " --layout=reverse --cycle)
+
+    [ -z "$selected_line" ] && {
+        return 1
+    }
+    echo "$selected_line" | awk '{print $NF}'
 }
 
 help_info() {
@@ -131,7 +148,14 @@ while [ $# -gt 0 ]; do
             download_dir="$1"
             ;;
         -E|--errors) errors_mode=1 ;;
-        -c|--continue) cat $thistory ; exit 0 ;;
+        -c|--continue)
+            continued_url=$(continue_ep)
+            if [ -n "$continued_url" ]; then
+                anime_url="$continued_url"
+            else
+                exit 0
+            fi
+            ;;
         -C|--clean) rm -f $thistory && printf "${BLUE}Історію очищено${NC}\n" && exit 0;;
         --vlc) internal_player="vlc" ;;
         --mpv) internal_player="mpv" ;;
@@ -173,6 +197,7 @@ while [ $# -gt 0 ]; do
 done
 
 query=$(printf "%s" "$query" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
 
 set_internal_player() {
     [ -n "$internal_player" ] && {
@@ -511,7 +536,7 @@ process_playlist() {
             selected=$(
                 awk '
                 /^===/ {
-                    printf "%s\t\n", "\t\x1b[1;32m" $0 "\x1b[0m\0"
+                    printf "%s\t\n", "\t\x1b[1;32m" $0 "\x1b[0m"
                     next
                 }
                 { print }
@@ -629,6 +654,7 @@ printf '%s' "$result" > "$temp_episodes"
 player_url=$(sed -n '1p' /tmp/headers.$$)
 anime_title=$(sed -n '2p' /tmp/headers.$$)
 episode_title=$(sed -n '3p' /tmp/headers.$$)
+cat /tmp/headers.$$ > ca.txt
 rm -f /tmp/headers.$$
 
 if [ -n "$episode_number" ]; then
@@ -682,7 +708,7 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s|$anime_title .*|$anime_title $episode_title|g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title $episode_title >> $thistory )
+    grep -qs "$anime_title " $thistory && sed -i "s|$anime_title .*|$anime_title ($episode_title) $link|g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title "($episode_title)" $link >> $thistory )
 }
 
 open_in_browser() {
