@@ -258,7 +258,7 @@ extract_episode_url() {
     ')
 
     quality=$(printf '%s' "$avail_quality" | sed -n "s/.*\[$requested_quality\]\([^,]*\).*/\1/p")
-    [ -n "$debug" ] && echo -e "[D] url with avail_quality: $avail_quality\n[D] req_quality: $requested_quality\n[D] ep_quality: $quality\n" >> $download_dir/debug.txt
+    [ -n "$debug" ] && printf "[D] url with avail_quality: %s\n[D] req_quality: %s\n[D] ep_quality: %s\n\n" "$avail_quality" "$requested_quality" "$quality" >> "$download_dir/debug.txt"
 
     case "$avail_quality" in
         # Формат з якостями [720p]url,[1080p]url
@@ -581,15 +581,15 @@ process_playlist() {
             }
         ;;
         html)
-            decoded_data=$(printf '%s' "$data" | awk '
-            {
-                while (match($0, /\\u[0-9a-fA-F]{4}/)) {
-                    hex = substr($0, RSTART+2, 4)
-                    char = sprintf("%c", strtonum("0x" hex))
-                    $0 = substr($0, 1, RSTART-1) char substr($0, RSTART+RLENGTH)
-                }
-                print
-            }' | tr -d '\\')
+            decoded_data=$(printf '%s' "$data" | sed 's/\\u\([0-9a-fA-F]\{4\}\)/\n\\u\1\n/g' | while IFS= read -r line; do
+                case "$line" in
+                    \\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
+                        hex=$(printf '%s' "$line" | cut -c3-6)
+                        printf "\\$(printf '%03o' "0x$hex")"
+                        ;;
+                    *) printf '%s' "$line" ;;
+                esac
+            done | tr -d '\\')
             
             printf '%s\n%s\n%s\n' "$player_url" "$title" "$episode_title" >&2
         
@@ -642,10 +642,10 @@ fi
 errors_only || printf "${BOLD}${MAGENTA}Збираємо серії...${NC}\n"
 playlist_data=$(fetch_playlist "$link") || exit 1
 [ -n "$debug" ] && \
-if [ $(echo "$playlist_data" | head -n 1) = "json" ]; then 
-    echo -e "[D] playlist_data_raw(json with jq):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
+if [ "$(echo "$playlist_data" | head -n 1)" = "json" ]; then 
+    printf "[D] playlist_data_raw(json with jq):\n{\n%s\n}\n" "$playlist_data" | fold -s -w 400 >> debug.txt
 else 
-    echo -e "[D] playlist_data_raw(html):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
+    printf "[D] playlist_data_raw(html):\n{\n%s\n}\n" "$playlist_data" | fold -s -w 400 >> debug.txt
 fi
 
 temp_episodes="${TMPDIR:-/tmp}/ani-ukr.episodes.$$"
@@ -653,7 +653,7 @@ temp_episodes="${TMPDIR:-/tmp}/ani-ukr.episodes.$$"
 
 result=$(printf '%s\n' "$playlist_data" | process_playlist /dev/stdin "$title" 2>/tmp/headers.$$)
 printf '%s' "$result" > "$temp_episodes"
-[ -n "$debug" ] && echo -e "[D] playlist_data: \n{\n$result\n}\n" >> debug.txt
+[ -n "$debug" ] && printf "[D] playlist_data:\n{\n%s\n}\n\n" "$result" >> debug.txt
 
 player_url=$(sed -n '1p' /tmp/headers.$$)
 anime_title=$(sed -n '2p' /tmp/headers.$$)
@@ -662,7 +662,7 @@ rm -f /tmp/headers.$$
 
 if [ -n "$episode_number" ]; then
     episode_data=$(grep "^${episode_number}[[:space:]]" "$temp_episodes")
-    [ -n "$debug" ] && echo -e "[D] exact_episode_data: $episode_data\n" >> debug.txt
+    [ -n "$debug" ] && printf "[D] exact_episode_data: %s\n\n" "$episode_data" >> debug.txt
     if [ -n "$episode_data" ]; then
         episode_title="$episode_number"
         player_url=$(printf '%s' "$episode_data" | cut -f2)
@@ -673,7 +673,7 @@ if [ -n "$episode_number" ]; then
     fi
 elif [ -n "$episode_range_start" ]; then
     episode_data=$(grep "^${episode_range_start}[[:space:]]" "$temp_episodes")
-    [ -n "$debug" ] && echo -e "[D] range_episode_data_start: $episode_data\n" >> debug.txt
+    [ -n "$debug" ] && printf "[D] range_episode_data_start: %s\n\n" "$episode_data" >> debug.txt
     if [ -n "$episode_data" ]; then
         episode_title="$episode_range_start"
         player_url=$(printf '%s' "$episode_data" | cut -f2)
@@ -683,7 +683,7 @@ elif [ -n "$episode_range_start" ]; then
         exit 1
     fi
 else
-    selected_episode=$(sort -V "$temp_episodes" | \
+    selected_episode=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | \
         fzf --layout=reverse \
         --prompt="Виберіть серію: " \
         --delimiter='\t' \
@@ -744,7 +744,7 @@ show_menu() {
 
         case "$choice" in
             "Наступна серія")
-                next_episode=$(sort -V "$temp_episodes" | awk -v current="$episode_title" '
+                next_episode=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | awk -v current="$episode_title" '
                     BEGIN { FS="\t" }
                     $1 == current { getline; print; exit }
                 ')
@@ -779,7 +779,7 @@ show_menu() {
                 }
                 ;;
             "Попередня серія")
-                prev_episode=$(sort -V "$temp_episodes" | awk -v current="$episode_title" '
+                prev_episode=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | awk -v current="$episode_title" '
                     BEGIN { FS="\t" }
                     NR > 1 && $1 == current { print p; exit }
                     { p = $0 }
@@ -805,7 +805,7 @@ show_menu() {
                 fi
                 ;;
             "Обрати серію")
-                selected_episode=$(sort -V "$temp_episodes" | \
+                selected_episode=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | \
                     fzf --layout=reverse \
                         --prompt="Виберіть серію: " \
                         --delimiter='\t' \
@@ -858,7 +858,7 @@ show_menu() {
 case "$internal_player" in
     browser)
         if [ -n "$episode_range_start" ] && [ -n "$episode_range_end" ]; then
-            episode_urls=$(sort -V "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
+            episode_urls=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
                 BEGIN { FS="\t" }
                 NR > 0 { 
                     num = $1 + 0
@@ -879,7 +879,7 @@ case "$internal_player" in
         ;;
     mpv|vlc|iina)
         if [ -n "$episode_range_start" ] && [ -n "$episode_range_end" ]; then
-            sort -V "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
+            sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
                 BEGIN { FS="\t" }
                 # Конвертуємо в числа для правильного порівняння
                 NR > 0 { 
@@ -906,7 +906,7 @@ case "$internal_player" in
         ;;
     download)
         if [ -n "$episode_range_start" ] && [ -n "$episode_range_end" ]; then
-            sort -V "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
+            sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | awk -v start="$episode_range_start" -v end="$episode_range_end" '
                 BEGIN { FS="\t" }
                 NR > 0 { 
                     num = $1 + 0
@@ -919,7 +919,7 @@ case "$internal_player" in
                 }
             done
         else
-            selected_episode=$(sort -V "$temp_episodes" | \
+            selected_episode=$(sort -t"$(printf '\t')" -k1,1n "$temp_episodes" | \
                 fzf --layout=reverse \
                     --prompt="Виберіть серію для завантаження: " \
                     --delimiter='\t' \
