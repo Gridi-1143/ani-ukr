@@ -159,7 +159,7 @@ while [ $# -gt 0 ]; do
                 exit 0
             fi
             ;;
-        -C|--clean) rm -f $thistory && printf "${BLUE}Історію очищено${NC}\n" && exit 0;;
+        -C|--clean) rm -f "$thistory" && printf "${BLUE}Історію очищено${NC}\n" && exit 0;;
         --vlc) internal_player="vlc" ;;
         --mpv) internal_player="mpv" ;;
         --iina) internal_player="iina" ;;
@@ -619,7 +619,7 @@ set_internal_player
     read query
 }
 
-[ -z "$query" ] && [ -z $anime_url ] && { printf "${RED}Назва аніме не введена${NC}\n"; exit 1; }
+[ -z "$query" ] && [ -z "$anime_url" ] && { printf "${RED}Назва аніме не введена${NC}\n"; exit 1; }
 
 errors_only || printf "${BOLD}${MAGENTA}Пошук аніме...${NC}"
 if [ -n "$anime_url" ]; then
@@ -641,7 +641,7 @@ fi
 errors_only || printf "${BOLD}${MAGENTA}Збираємо серії...${NC}\n"
 playlist_data=$(fetch_playlist "$link") || exit 1
 [ -n "$debug" ] && \
-if [ $(echo "$playlist_data" | head -n 1) == "json" ]; then 
+if [ $(echo "$playlist_data" | head -n 1) = "json" ]; then 
     echo -e "[D] playlist_data_raw(json with jq):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
 else 
     echo -e "[D] playlist_data_raw(html):\n{\n$playlist_data\n}" | fold -s -w 400 >> debug.txt
@@ -710,7 +710,7 @@ play_episode() {
             iina --no-ui --title="$anime_title — $episode_title" "$episode_url" > /dev/null 2>&1
             ;;
     esac
-    grep -qs "$anime_title " $thistory && sed -i "s|$anime_title .*|$anime_title ($episode_title) $link|g" $thistory || ( mkdir -p $HOME/.local/state/ani-ukr && echo $anime_title "($episode_title)" $link >> $thistory )
+    grep -qs "$anime_title " "$thistory" && sed -i "s|$anime_title .*|$anime_title ($episode_title) $link|g" "$thistory" || ( mkdir -p $HOME/.local/state/ani-ukr && echo "$anime_title" "($episode_title)" "$link" >> "$thistory" )
 }
 
 open_in_browser() {
@@ -832,7 +832,7 @@ show_menu() {
                 errors_only || printf "${BOLD}${BLUE}URL плеєру${NC} ($episode_title): ${CYAN}$player_url${NC}\n"
                 if [ -n "$requested_quality" ]; then
                     new_episode_url=$(extract_episode_url "$player_url" "$requested_quality") || {
-                        [ "$forced_quality" -eq 0] && requested_quality="" 
+                        [ "$forced_quality" -eq 0 ] && requested_quality="" 
                         continue 
                     }
                     errors_only || printf "${BOLD}${BLUE}URL серії${NC} ($episode_title): ${CYAN}$new_episode_url${NC}\n"
