@@ -24,7 +24,7 @@ debug=""
 thistory="$HOME/.local/state/ani-ukr/history"
 requested_quality=""
 forced_quality=0
-version=1.5.1
+version=1.5.2
 
 version_info() {
     printf "Версія ${version}\n"
